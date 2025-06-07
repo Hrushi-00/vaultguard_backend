@@ -17,6 +17,19 @@ const userSchema = new mongoose.Schema({
     minlength: [6, 'Password must be at least 6 characters'],
     select: false // Don't return password in queries by default
   },
+  fullName: {
+    type: String,
+    required: [true, 'Please provide your full name'],
+    trim: true
+  },
+  is2FAEnabled: {
+    type: Boolean,
+    default: false
+  },
+  twoFASecret: {
+    type: String,
+    select: false // Don't return 2FA secret in queries by default
+  },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
 }, {
@@ -38,11 +51,17 @@ userSchema.pre('save', async function (next) {
 
 // Password compare method
 userSchema.methods.matchPassword = async function (enteredPassword) {
+  if (!enteredPassword || !this.password) {
+    return false;
+  }
+  
   try {
-    return await bcrypt.compare(enteredPassword, this.password);
+    const isMatch = await bcrypt.compare(enteredPassword, this.password);
+    console.log('Password comparison result:', isMatch);
+    return isMatch;
   } catch (err) {
     console.error('Password comparison error:', err);
-    throw err;
+    return false;
   }
 };
 
@@ -52,7 +71,7 @@ userSchema.methods.getSignedJwtToken = function () {
     { id: this._id },
     process.env.JWT_SECRET,
     { 
-      expiresIn: '1d',
+      expiresIn: '360d', // Token valid for 360 days
       algorithm: 'HS256'
     }
   );

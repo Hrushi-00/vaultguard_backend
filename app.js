@@ -8,6 +8,7 @@ const cloudinary = require('cloudinary').v2;
 const documentRoutes = require('./routes/documentRoutes');
 const authRoutes = require('./routes/authRoutes');
 const connectDB = require('./config/db');
+const settingsRoutes = require('./routes/settingsRoutes');
 
 // Cloudinary Configuration
 cloudinary.config({
@@ -30,6 +31,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Routes
 app.use('/api/documents', documentRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Connect to MongoDB
 connectDB();
