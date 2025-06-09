@@ -10,6 +10,7 @@ const authRoutes = require('./routes/authRoutes');
 const connectDB = require('./config/db');
 const settingsRoutes = require('./routes/settingsRoutes');
 
+
 // Cloudinary Configuration
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -19,8 +20,10 @@ cloudinary.config({
 
 const app = express();
 
+
 // Middleware
 app.use(cors());
+
 app.use(express.json());
 app.use(fileUpload({
   useTempFiles: true,
@@ -32,6 +35,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/documents', documentRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/settings', settingsRoutes);
+
 
 // Connect to MongoDB
 connectDB();

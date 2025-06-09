@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const Document = require('../models/Document');
+const User = require('../models/User');
 const cloudinary = require('cloudinary').v2;
   
 exports.uploadDocument = async (req, res) => {
@@ -9,30 +10,53 @@ exports.uploadDocument = async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    // Check if user is authenticated
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists and get their ID
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
     const file = req.files.file;
 
-    // Upload to Cloudinary
+    // Upload to Cloudinary with user-specific folder
     const uploadResponse = await cloudinary.uploader.upload(file.tempFilePath, {
       resource_type: 'auto',
-      folder: 'vaultguard_docs',
+      folder: `vaultguard_docs/${user._id}`, // Create user-specific folder
+      public_id: `${user._id}_${Date.now()}`, // Add user ID to filename
     });
 
-    // Create document record
+    // Create document record with strict user ownership
     const newDocument = new Document({
+      user: user._id, // Store as ObjectId
       name: file.name,
       url: uploadResponse.secure_url,
       cloudinaryId: uploadResponse.public_id,
       size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
       type: file.mimetype,
       uploadDate: new Date(),
+      owner: user._id, // Additional owner field for extra security
     });
 
+    // Save document with user ownership
     await newDocument.save();
 
     // Clean up temp file (non-blocking)
     await fs.promises.unlink(file.tempFilePath);
 
-    res.status(201).json(newDocument);
+    // Return document with user information
+    const populatedDoc = await Document.findById(newDocument._id)
+      .populate('user', 'email fullName')
+      .select('-__v');
+
+    res.status(201).json({
+      message: 'Document uploaded successfully',
+      document: populatedDoc
+    });
   } catch (error) {
     console.error('Upload error:', error);
     res.status(500).json({
@@ -44,7 +68,20 @@ exports.uploadDocument = async (req, res) => {
 
 exports.getDocuments = async (req, res) => {
   try {
-    const docs = await Document.find().sort({ uploadDate: -1 });
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const docs = await Document.find({ user: user._id.toString() })
+      .select('-__v')
+      .sort({ uploadDate: -1 });
+    
     res.json(docs);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching documents', error: error.message });
@@ -53,8 +90,25 @@ exports.getDocuments = async (req, res) => {
 
 exports.downloadDocument = async (req, res) => {
   try {
-    const doc = await Document.findById(req.params.id);
-    if (!doc) return res.status(404).json({ message: 'Document not found' });
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const doc = await Document.findOne({ 
+      _id: req.params.id,
+      user: user._id.toString()
+    });
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found or access denied' });
+    }
+
     res.redirect(doc.url);
   } catch (error) {
     res.status(500).json({ message: 'Download failed', error: error.message });
@@ -63,8 +117,24 @@ exports.downloadDocument = async (req, res) => {
 
 exports.deleteDocument = async (req, res) => {
   try {
-    const doc = await Document.findById(req.params.id);
-    if (!doc) return res.status(404).json({ message: 'Document not found' });
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    const doc = await Document.findOne({ 
+      _id: req.params.id,
+      user: user._id.toString()
+    });
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found or access denied' });
+    }
 
     // Delete from Cloudinary
     if (doc.cloudinaryId) {
@@ -81,12 +151,28 @@ exports.deleteDocument = async (req, res) => {
 
 exports.renameDocument = async (req, res) => {
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
     if (!req.body.name) {
       return res.status(400).json({ message: 'New name is required' });
     }
 
-    const doc = await Document.findById(req.params.id);
-    if (!doc) return res.status(404).json({ message: 'Document not found' });
+    const doc = await Document.findOne({ 
+      _id: req.params.id,
+      user: user._id.toString()
+    });
+
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found or access denied' });
+    }
     
     doc.name = req.body.name;
     await doc.save();
@@ -98,15 +184,27 @@ exports.renameDocument = async (req, res) => {
 
 exports.searchDocuments = async (req, res) => {
   try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Verify user exists
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
     const { query } = req.query;
     if (!query) {
       return res.status(400).json({ message: 'Search query is required' });
     }
 
-    // Search documents where name contains the query (case-insensitive)
     const docs = await Document.find({
+      user: user._id.toString(),
       name: { $regex: query, $options: 'i' }
-    }).sort({ uploadDate: -1 });
+    })
+    .select('-__v')
+    .sort({ uploadDate: -1 });
 
     res.json(docs);
   } catch (error) {
