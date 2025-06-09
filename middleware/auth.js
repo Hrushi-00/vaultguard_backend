@@ -19,8 +19,8 @@ exports.authenticate = async (req, res, next) => {
       return res.status(401).json({ message: 'User not found' });
     }
 
-    // Set the user ID in the request
-    req.user = { _id: user._id.toString() };
+    // Set the user object in the request
+    req.user = user;
     next();
   } catch (err) {
     console.error('Auth middleware error:', err);
